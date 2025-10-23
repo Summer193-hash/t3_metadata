@@ -8,9 +8,9 @@ import shutil
 # --- Configuration ---
 # The root folder of the processed NPZ dataset
 NPZ_ROOT = 'C:\\Users\\Sumer Singh\\Desktop\\metadata\\tekken_dataset_npz'
-# The final metadata file we will create
+# The final metadata file
 OUTPUT_MASTER_METADATA_FILE = osp.join(NPZ_ROOT, 'metadata.json')
-# The subfolders we need to scan
+# The subfolders to be scanned
 FOLDERS_TO_SCAN = ['P1_WIN', 'P2_WIN', 'DRAW']
 # The in-game round time in seconds (for duration calculation)
 GAME_MAX_ROUND_SECONDS = 40 
@@ -21,7 +21,7 @@ RECORDED_FPS = 30
 STATIC_GAME_INFO = {
     "stage": "Taekwondo Dojo"
 }
-# HARDCODING IT FOR NOW. REMINDER: UPDATE THE MAIN COLLECTION PIPELINE TO INCLUDE THE CHARACTER NAMES
+# HARDCODING IT FOR NOW. REMINDER: UPDATE THE MAIN DATA COLLECTION PIPELINE TO INCLUDE THE CHARACTER NAMES
 STATIC_PLAYER_INFO = {
     "p1_character": "Hwoarang",
     "p2_character": "Jin"
@@ -204,13 +204,13 @@ def reorganize_and_generate_metadata():
                     }
                 }
                 
-                # --- 5. Save Per-Round metadata.json File ---
+                # 5. Save Per-Round metadata.json File
                 per_round_metadata_path = osp.join(current_round_folder_path, 'metadata.json')
                 with open(per_round_metadata_path, 'w', encoding='utf-8') as f:
                     json.dump(per_round_metadata_entry, f, indent=4)
 
-                # --- 6. Prepare Entry for Master File ---
-                # This entry needs the *full* relative path from the root
+                # 6. Prepare Entry for Master File
+                # This entry needs the FULL relative path from the root
                 master_entry = per_round_metadata_entry.copy()
                 master_entry["npz_path"] = osp.relpath(npz_path_to_process, NPZ_ROOT).replace(os.sep, '/')
                 
@@ -226,9 +226,14 @@ def reorganize_and_generate_metadata():
     print(f"\nScan and reorganization complete. Found {len(round_entries_for_master_file)} rounds.")
     print(f"Determined max sequence length: {max_length}")
 
-    # --- 7. Assemble the Master Metadata File ---
+    # --- 7. Sorting the round entries ---
+    print("Sorting round entries by round_id...")
+    round_entries_for_master_file.sort(key=lambda x: x['round_id'])
+    print("Sorting complete.")
+
+    # 8. Assembling the Master Metadata File
     master_metadata = {
-        "dataset_name": "Tekken 3 Processed NPZ Dataset (Re-generated)",
+        "dataset_name": "Tekken 3 Processed NPZ Dataset",
         "description": "Padded rounds of gameplay. Each NPZ contains padded arrays for images, actions, and states.",
         "max_sequence_length": max_length,
         "frame_dimensions": STATIC_FRAME_INFO,
@@ -240,19 +245,19 @@ def reorganize_and_generate_metadata():
             "valid_frames": f"Padded (T,) boolean mask. 1 = real frame, 0 = padding. Shape: ({max_length},)"
         },
         "action_id_p1_mapping": {
-            "description": "Integer ID from 0-255 calculated as a sum of powers of 2.",
+            "description": "Integer ID from 0-255 calculated as a sum of powers of 2",
             "columns": BUTTON_COLUMNS_P1,
             "bit_values": {col: int(POWERS_OF_2[i]) for i, col in enumerate(BUTTON_COLUMNS_P1)}
         },
         "action_id_p2_mapping": {
-            "description": "Integer ID from 0-255 calculated as a sum of powers of 2.",
+            "description": "Integer ID from 0-255 calculated as a sum of powers of 2",
             "columns": BUTTON_COLUMNS_P2,
-            "bit_values": {col: int(POWERS_OF_2[i]) for i, col in enumerate(BUTTON_COLUMNS_P1)}
+            "bit_values": {col: int(POWERS_OF_2[i]) for i, col in enumerate(BUTTON_COLUMNS_P2)}
         },
-        "rounds": round_entries_for_master_file # This is our new, detailed list
+        "rounds": round_entries_for_master_file
     }
     
-    # --- 8. Save the final MASTER JSON file ---
+    # 9. Saving the final MASTER JSON file
     try:
         with open(OUTPUT_MASTER_METADATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(master_metadata, f, indent=4)
@@ -262,4 +267,3 @@ def reorganize_and_generate_metadata():
 
 if __name__ == "__main__":
     reorganize_and_generate_metadata()
-
