@@ -22,8 +22,9 @@ GAME_MAX_ROUND_SECONDS = 40
 # the FPS the game was recorded at (for video and calculations)
 RECORDED_FPS = 30
 # --- Number of parallel CPU workers ---
-# Set to a safe default. Increase this (e.g., to os.cpu_count()) if you want.
-MAX_WORKERS = max(1, multiprocessing.cpu_count() - 2) 
+MAX_WORKERS = max(1, multiprocessing.cpu_count() - 2)
+# --- NEW: Define the video codec string ---
+VIDEO_CODEC_STR = 'avc1' # H.264 codec
 
 
 # --- Static Information ---
@@ -67,22 +68,20 @@ def process_round(task):
             valid_frames_mask = data['valid_frames']
             original_length = int(np.sum(valid_frames_mask))
             
-            # --- !!! FIX 1: Check for 0-frame rounds !!! ---
             if original_length == 0:
                 print(f"\nWarning: {round_id_str} has 0 valid frames. Skipping video creation.")
-                return None # Skip this task entirely
+                return None 
             
             valid_images = data['images'][:original_length] # (T, C, H, W)
             valid_states = data['states'][:original_length] # (T, 3)
 
         # 3. --- Write Video File ---
         try:
-            # --- !!! FIX 2: Changed codec to 'avc1' (H.264) !!! ---
-            fourcc = cv2.VideoWriter_fourcc(*'avc1') 
+            # --- Use the codec constant ---
+            fourcc = cv2.VideoWriter_fourcc(*VIDEO_CODEC_STR) 
             video_writer = cv2.VideoWriter(output_video_path, fourcc, RECORDED_FPS, 
                                            (STATIC_FRAME_INFO["width"], STATIC_FRAME_INFO["height"]))
             
-            # --- !!! FIX 3: Check if VideoWriter opened successfully !!! ---
             if not video_writer.isOpened():
                 print(f"\nError: VideoWriter failed to open for {round_id_str}. Check codec/permissions.")
                 return None
@@ -96,7 +95,7 @@ def process_round(task):
         
         except Exception as e:
             print(f"\nError writing video for {round_id_str}: {e}")
-            return None # Fail this task
+            return None 
 
         # 4. Get Game State & Duration Info
         initial_health_p1 = 1.0
@@ -139,6 +138,8 @@ def process_round(task):
             "technical": {
                 "fps": RECORDED_FPS,
                 "resolution": [STATIC_FRAME_INFO["width"], STATIC_FRAME_INFO["height"]],
+                # --- ADDED CODEC TO LOCAL METADATA ---
+                "codec": VIDEO_CODEC_STR, 
                 "video_file_size_bytes": video_file_size_bytes
             },
             "game_state": {
@@ -170,10 +171,10 @@ def convert_npz_to_video_dataset():
     all rounds in parallel.
     """
     
-    print(f"Scanning source {NPZ_ROOT}")
+    print(f"Scanning source {NPZ_ROOT}...")
     os.makedirs(OUTPUT_ROOT, exist_ok=True)
     
-    tasks_to_process = [] # This will hold all tasks we need to run
+    tasks_to_process = [] 
 
     # --- STAGE 1: Scan and Collect Tasks ---
     for folder_name in FOLDERS_TO_SCAN:
@@ -183,7 +184,7 @@ def convert_npz_to_video_dataset():
             print(f"Warning: Source folder not found, skipping: {folder_path}")
             continue
 
-        print(f"Scanning source folder: {folder_name}")
+        print(f"Scanning source folder: {folder_name}...")
         
         winner_str = 'draw'
         if folder_name == 'P1_WIN':
@@ -214,7 +215,6 @@ def convert_npz_to_video_dataset():
             else:
                 continue
             
-            # Add the task to our list
             tasks_to_process.append((npz_path_to_process, round_id_str, winner_str))
 
     if not tasks_to_process:
@@ -223,15 +223,13 @@ def convert_npz_to_video_dataset():
 
     # --- STAGE 2: Execute Tasks in Parallel ---
     print(f"\nFound {len(tasks_to_process)} rounds to process.")
-    print(f"Starting parallel conversion using up to {MAX_WORKERS} workers")
+    print(f"Starting parallel conversion using up to {MAX_WORKERS} workers...")
     
     round_entries_for_master_file = []
     
     with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # Submit all tasks to the pool
         futures = {executor.submit(process_round, task): task for task in tasks_to_process}
         
-        # Process results as they complete, with a progress bar
         for future in tqdm(as_completed(futures), total=len(tasks_to_process), desc="Converting rounds"):
             result = future.result()
             if result:
@@ -247,7 +245,7 @@ def convert_npz_to_video_dataset():
     print(f"\nConversion complete. Successfully processed {len(round_entries_for_master_file)} rounds.")
 
     # --- STAGE 3: Sorting and Final Metadata Generation ---
-    print("Sorting round entries by round_id")
+    print("Sorting round entries by round_id...")
     round_entries_for_master_file.sort(key=lambda x: x['round_id'])
     print("Sorting complete.")
 
@@ -255,7 +253,14 @@ def convert_npz_to_video_dataset():
     master_metadata = {
         "dataset_name": "Tekken 3 Video Dataset",
         "description": "Each round folder (e.g., 'round_001/') contains an 'video.mp4' and a 'metadata.json' file.",
-        "frame_dimensions": STATIC_FRAME_INFO,
+        "frame_dimensions": {
+            "width": STATIC_FRAME_INFO["width"],
+            "height": STATIC_FRAME_INFO["height"],
+            "channels": STATIC_FRAME_INFO["channels"],
+            "fps": STATIC_FRAME_INFO["fps"],
+            # --- ADDED CODEC TO MASTER METADATA ---
+            "codec": VIDEO_CODEC_STR 
+        },
         "action_id_p1_mapping": {
             "description": "Integer ID from 0-255 calculated as a sum of powers of 2 (for context, not in files)",
             "columns": BUTTON_COLUMNS_P1,
